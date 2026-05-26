@@ -13,11 +13,11 @@ def submit():
     # Check if user_id was provided, if not, generate a unique one
     user_id = request.form.get("user_id")
     if not user_id:
-        user_id = f"USER"-{str(uuid.uuid4())[:8]} # Generates something like USER-7a2b9c1d
+        user_id = f"USER-{str(uuid.uuid4())[:8]}" # Generates something like USER-7a2b9c1d
     
     # Extracting data from the form
     data = {
-        "user_id": request.form.get("user_id"),
+        "user_id": user_id,
         "activity": request.form.get("activity_type"),
         "duration": int(request.form.get("duration")),
         "calories": int(request.form.get("calories")),
@@ -30,4 +30,4 @@ def submit():
 
     return "Data successfully sent to the AWS Pipline!"
 
-app.run()
+app.run(debug=True)

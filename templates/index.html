@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fitness Tracker</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='../static/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <!--<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"> -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/css/bootstrap.min.css">
 </head>
@@ -33,11 +33,11 @@
                         <input type="number" name="duration" class="form-control" placeholder="Duration (Mins)" required>
                     </div>
 
-                    <div>
+                    <div class="form-row">
                         <input type="number" name="calories" class="form-control" placeholder="Calories Burned" required>
                     </div>
 
-                    <div>
+                    <div class="form-row">
                         <input type="number" name="heart_rate" class="form-control" placeholder="Avg Heart Rate (BPM)">
                     </div>
 
