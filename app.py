@@ -18,6 +18,7 @@ def submit():
     # Extracting data from the form
     data = {
         "user_id": user_id,
+        "username": request.form.get("username"),
         "activity": request.form.get("activity_type"),
         "duration": int(request.form.get("duration")),
         "calories": int(request.form.get("calories")),
