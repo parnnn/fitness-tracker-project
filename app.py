@@ -29,6 +29,6 @@ def submit():
     # LOGGING DATA (In Part 4/5, you'll replace this with DynamoDB code)
     print(f"New Fitness Log Recived: {data}")
 
-    return "Data successfully sent to the AWS Pipline!"
-
-app.run(debug=True)
+    return "Data successfully sent!"
+if __name__ == '__main__':
+    app.run(debug=True)
