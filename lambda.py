@@ -186,10 +186,8 @@ def lambda_handler(event, context):
             dff = handle_insert(record)
         elif event_name == 'MODIFY':
             dff = handle_modify(record)
-
         elif event_name == 'REMOVE':
             dff = handle_remove(record)
-
         else:            
              continue  # Skip any unknown event types       
 
@@ -203,9 +201,6 @@ def lambda_handler(event, context):
             df[all_columns] = df[all_columns].astype(str)  
                     
             # 4. SAVE TO S3 PART
-            # Convert our raw data to a Pandas DataFrame
-            #final_dataframe = handle_insert(record)
-
             # Create file name and folder path
             current_time = datetime.now()
             file_name = f"workout_log_{event_name.lower()}_{current_time}.csv"
@@ -213,7 +208,6 @@ def lambda_handler(event, context):
             folder_path = f"staging/workout_log/{event_name.lower()}/{file_name}"
 
             # Convert DataFrame to CSV format
-            #csv_data = final_dataframe.to_csv(index=False)
             csv_buffer = StringIO()
             df.to_csv(csv_buffer, index=False)
 
