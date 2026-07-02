@@ -74,9 +74,10 @@ s3_client = boto3.client('s3')
 # Main function that runs when DynamoDB sends data
 def lambda_handler(event, context):
     print(event)
-    
+    df = pd.DataFrame()
+
     for record in event['Records']:
-        df = pd.DataFrame()
+        table_name = record['eventSourceARN'].split('/')[1]
 
         event_name = record['eventName']
 
@@ -192,7 +193,7 @@ def lambda_handler(event, context):
              continue  # Skip any unknown event types       
 
         if dff is not None:
-            dff[datetime.now()] = record['dynamodb'].get('ApproximateCreationDateTime'),            
+            dff['created_at'] = record['dynamodb'].get('ApproximateCreationDateTime')            
         df = dff
         
         if not df.empty:
@@ -203,9 +204,9 @@ def lambda_handler(event, context):
             # 4. SAVE TO S3 PART
             # Create file name and folder path
             current_time = datetime.now()
-            file_name = f"workout_log_{event_name.lower()}_{current_time}.csv"
+            file_name = f"{table_name}_{event_name.lower()}_{current_time}.csv"
             bucket_name = "fitnesstracker-staging-264384440796-ap-southeast-1-an"
-            folder_path = f"staging/workout_log/{event_name.lower()}/{file_name}"
+            folder_path = f"staging/{table_name}/{event_name.lower()}/{file_name}"
 
             # Convert DataFrame to CSV format
             csv_buffer = StringIO()
