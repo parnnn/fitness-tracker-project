@@ -6,6 +6,8 @@ import time
 from io import StringIO
 
 # Function to handle new data coming in
+
+
 def handle_insert(record):
     print("Handling Insert: ", record)
     data = {}
@@ -25,6 +27,8 @@ def handle_insert(record):
     return dff
 
 # Function to handle modified data
+
+
 def handle_modify(record):
     print("Handling Modify: ", record)
 
@@ -50,6 +54,8 @@ def handle_modify(record):
     return pd.concat([dff_insert, dff_remove], ignore_index=True)
 
 # Function to handle deleted data
+
+
 def handle_remove(record):
     print("Handle Remove: ", record)
     old_data = {}
@@ -65,6 +71,7 @@ def handle_remove(record):
 
     return dff
 
+
 # Setup AWS tools
 sns_client = boto3.client('sns')
 SNS_TOPIC_ARN = 'arn:aws:sns:ap-southeast-1:264384440796:FitnessTracker-Alerts'
@@ -72,6 +79,8 @@ bedrock_client = boto3.client('bedrock-runtime', region_name='ap-southeast-1')
 s3_client = boto3.client('s3')
 
 # Main function that runs when DynamoDB sends data
+
+
 def lambda_handler(event, context):
     print(event)
     df = pd.DataFrame()
@@ -93,8 +102,7 @@ def lambda_handler(event, context):
 
             # 2. Check if heart rate exists in the data
             if 'heart_rate' in new_image:
-                heart_rate_string = new_image['heart_rate']['N']
-                heart_rate_number = int(heart_rate_string)
+                heart_rate_number = int(new_image['heart_rate']['N'])
 
                 # Set a default value for ai_summary
                 new_image['ai_summary'] = {
@@ -103,7 +111,7 @@ def lambda_handler(event, context):
                 # If heart rate is 180 or higher
                 if heart_rate_number >= 180:
 
-                # 3. Get workout details safely using if-else
+                    # 3. Get workout details safely
                     if 'activity' in new_image:
                         activity = new_image['activity']['S']
                     else:
@@ -121,86 +129,89 @@ def lambda_handler(event, context):
 
                     # --- CLAUDE 3 AI SUMMARY PART ---
                     # Create the instruction for the AI
-                    prompt_text = f"Act as an elite fitness coach. Write a short, encouraging 1-sentence summary for a user who just did {activity} for {duration} minutes, burning {calories} calories with a heart rate of {heart_rate_number} BPM."
+                    prompt_text = f"Act as a health and fitness advisor. The user just did {activity} for {duration} minutes, {calories} calories, and their heart rate spiked to a dangerously high {heart_rate_number} BPM. Write a short, urgent 1-sentence warning advising them to cool down, hydrate, and seek medical attention if they feel unwell. Do not congratulate them."
+                else:
+                    prompt_text = f"Act as a health and fitness advisor. The user just did {activity} for {duration} minutes, {calories} calories with a heart rate of {heart_rate_number} BPM. Write a short, encouraging 1-sentence summary advising them to cool down and hydrate."
 
-                    # Setup the required format for AWS Bedrock
-                    ai_request_data = {
-                        "anthropic_version": "bedrock-2023-05-31",
-                        "max_tokens": 50,
-                        "temperature": 0.7,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": prompt_text
-                            }
-                        ]
-                    }
+                # Setup the required format for AWS Bedrock
+                ai_request_data = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 50,
+                    "temperature": 0.7,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt_text
+                        }
+                    ]
+                }
 
-                    # Convert Python dictionary to JSON string
-                    ai_body_string = json.dumps(ai_request_data)
+                # Convert Python dictionary to JSON string
+                ai_body_string = json.dumps(ai_request_data)
 
-                    try:
-                        # Ask Claude AI for the summary
-                        response = bedrock_client.invoke_model(
-                            body=ai_body_string,
-                            modelId="anthropic.claude-3-haiku-20240307-v1:0",
-                            accept='application/json',
-                            contentType='application/json'
-                        )
-
-                        # Read and decode the AI's answer step-by-step
-                        response_bytes = response['body'].read()
-                        response_dictionary = json.loads(
-                            response_bytes)
-
-                        # Extract the actual text message from the dictionary
-                        ai_message = response_dictionary['content'][0]['text']
-                        ai_summary = ai_message.strip()  # Remove extra spaces
-
-                    except Exception as error:
-                        # If AI fails, print error and use a default message
-                        print("AI Generation failed: ", error)
-                        ai_summary = "Great workout! Keep it up."
-
-                    # Add the final AI summary to our data payload
-                    new_image['ai_summary'] = {'S': ai_summary}
-                    # -----------------------------------
-
-                    # --- SNS EMAIL ALERT PART ---
-                    # Check who the user is
-                    if 'user_id' in new_image:
-                        user_name = new_image['user_id']['S']
-                    else:
-                        user_name = 'Unknown'
-
-                    # Create alert message
-                    alert_text = f"🚨 WARNING: User {user_name} just logged a dangerously high heart rate of {heart_rate_number} BPM!"
-
-                    # Send the email alert
-                    sns_client.publish(
-                        TopicArn=SNS_TOPIC_ARN,
-                        Message=alert_text,
-                        Subject="Fitness Tracker Health Alert"
+                try:
+                    # Ask Claude AI for the summary
+                    response = bedrock_client.invoke_model(
+                        body=ai_body_string,
+                        modelId="anthropic.claude-3-haiku-20240307-v1:0",
+                        accept='application/json',
+                        contentType='application/json'
                     )
-                    # -----------------------
+
+                    # Read and decode the AI's answer step-by-step
+                    response_bytes = response['body'].read()
+                    response_dictionary = json.loads(
+                        response_bytes)
+
+                    # Extract the actual text message from the dictionary
+                    ai_message = response_dictionary['content'][0]['text']
+                    ai_summary = ai_message.strip()  # Remove extra spaces
+
+                except Exception as error:
+                    # If AI fails, print error and use a default message
+                    print("AI Generation failed: ", error)
+                    ai_summary = "Great workout! Keep it up."
+
+                # Add the final AI summary to our data payload
+                new_image['ai_summary'] = {'S': ai_summary}
+                # -----------------------------------
+
+                # --- SNS EMAIL ALERT PART ---
+                # Check who the user is
+                if 'user_id' in new_image:
+                    user_name = new_image['user_id']['S']
+                else:
+                    user_name = 'Unknown'
+
+                # Create alert message
+                alert_text = f"🚨 WARNING: User {user_name} just logged a dangerously high heart rate of {heart_rate_number} BPM!"
+
+                # Send the email alert
+                sns_client.publish(
+                    TopicArn=SNS_TOPIC_ARN,
+                    Message=alert_text,
+                    Subject="Fitness Tracker Health Alert"
+                )
+                # -----------------------
 
             dff = handle_insert(record)
         elif event_name == 'MODIFY':
             dff = handle_modify(record)
         elif event_name == 'REMOVE':
             dff = handle_remove(record)
-        else:            
-             continue  # Skip any unknown event types       
+        else:
+            continue  # Skip any unknown event types
 
         if dff is not None:
-            dff['created_at'] = record['dynamodb'].get('ApproximateCreationDateTime')            
+            dff['created_at'] = record['dynamodb'].get(
+                'ApproximateCreationDateTime')
         df = dff
-        
+
         if not df.empty:
-     
+
             all_columns = list(df)
-            df[all_columns] = df[all_columns].astype(str)  
-                    
+            df[all_columns] = df[all_columns].astype(str)
+
             # 4. SAVE TO S3 PART
             # Create file name and folder path
             current_time = datetime.now()
@@ -219,7 +230,7 @@ def lambda_handler(event, context):
                 Body=csv_buffer.getvalue()
             )
             print(f"Successfully upload {file_name} to S3 bucket")
-            
+
     # Count how many records we finished and print it
     total_records = len(event['Records'])
     print("Successfully processed %s records." % str(total_records))
