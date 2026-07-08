@@ -6,32 +6,38 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from awsglue import DynamicFrame
 import boto3
-import os
 
-# Specify your S3 bucket and path
+
+# Specify your S3 bucket and path for the data warehouse
 bucket_name = 'fitnesstracker-staging-264384440796-ap-southeast-1-an'
 prefix = 'warehouse/'
 
-# Initialize S3 client
+# Initialize S3 client for manual file deletion later
 s3 = boto3.client('s3')
 
 
 def sparkUnion(glueContext, unionType, mapping, transformation_ctx) -> DynamicFrame:
     # Check if any of the frames in the mapping is empty
     if any(frame.count() == 0 for alias, frame in mapping.items()):
-        # If any frame is empty, return the non-empty frame
+        # If any frame is empty, return the non-empty frame to avoid schema conflicts
         non_empty_frame = next(frame for alias, frame in mapping.items() if frame.count() > 0)
         return non_empty_frame
     else:
-        # All frames are non-empty, perform the union
-        for alias, frame in mapping.items():
-            frame.toDF().createOrReplaceTempView(alias)
-        result = spark.sql(
-            "(select * from {}) UNION {} (select * from {})".format(*mapping.keys())
-        )
+        # All frames are non-empty, perform with the union
+        #Extract actual DataFrames from the mapping dictionary
+        tables = list(mapping.values())
+        df1 = tables[0].toDF()
+        df2 = tables[1].toDF()
+
+        result = df1.unionByName(df2, allowMissingColumns=True)
+
+        #Drop dupliacates if unionType is not "ALL"
+        if unionType != "ALL":
+            result = result.distinct()
+
         return DynamicFrame.fromDF(result, glueContext, transformation_ctx)
 
-
+# Initialize Glue Job and Spark contexts
 args = getResolvedOptions(sys.argv, ["JOB_NAME"])
 sc = SparkContext()
 glueContext = GlueContext(sc)
@@ -39,7 +45,7 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args["JOB_NAME"], args)
 
-# Script  for node Workout Log
+# Extract: Read Workout Log Data from staging (Format:CSV)
 Workout_log_node = glueContext.create_dynamic_frame.from_options(
     format_options={"quoteChar": '"', "withHeader": True, "separator": ","},
     connection_type="s3",
@@ -53,7 +59,7 @@ Workout_log_node = glueContext.create_dynamic_frame.from_options(
 print("Read Workout Log Data")
 
 
-# Script for node Users
+# Extract: Read Users Data from staging (Format:CSV)
 Users_node = glueContext.create_dynamic_frame.from_options(
     format_options={"quoteChar": '"', "withHeader": True, "separator": ","},
     connection_type="s3",
@@ -66,11 +72,10 @@ Users_node = glueContext.create_dynamic_frame.from_options(
 )
 print("Read Users Data")
 
-# Script for node DW
+# Extract: Read Existing Data from Data Warehouse (Format:Parquet)
 DW_node = glueContext.create_dynamic_frame.from_options(
-    format_options={"quoteChar": '"', "withHeader": True, "separator": ","},
     connection_type="s3",
-    format="csv",
+    format="parquet",
     connection_options={
         "paths": ["s3://fitnesstracker-staging-264384440796-ap-southeast-1-an/warehouse/"],
         "recurse": True,
@@ -79,7 +84,7 @@ DW_node = glueContext.create_dynamic_frame.from_options(
 )
 print("Read DW Data")
 
-# Script  for node Join
+# Transform: Join Workout Log and Users data based on user_id
 Join_node = Join.apply(
     frame1=Workout_log_node,
     frame2=Users_node,
@@ -87,36 +92,45 @@ Join_node = Join.apply(
     keys2=["user_id"],
     transformation_ctx="Join_node",
 )
-print("Join Sucessful")
+print("Join Successful")
 
-# Script  for node Union
+# Transform: Union the newly joined data with the exising warehouse data
 Union_node = sparkUnion(
     glueContext,
-    unionType="ALL",
+    unionType="DISTINCT",
     mapping={"source1": Join_node, "source2": DW_node},
     transformation_ctx="Union_node",
 )
 
-print("Union Sucessful")
+print("Union Successful")
 
+# Cleanup: Deleate all existing files in the warehouse path before writing the new data.
 # List all objects in the specified S3 path
-objects = s3.list_objects(Bucket=bucket_name, Prefix=prefix)['Contents']
+objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
-# Delete each object
-for obj in objects:
-    s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
-print("Delete existing files") 
-    
+if 'Contents' in objects:
+    for obj in objects['Contents']:
+        s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
+    print("Delete existing files successful")
+else:
+    print("No existing files to delete")
 
+# Coalesce into a single partition before writing to S3
+Coalesce_node = Union_node.coalesce(1)
+print("Coalesce Successful")
+
+# Load: Write the newly combined data back to warehouse as a Parquet file
 AmazonS3_node = glueContext.write_dynamic_frame.from_options(
-    frame=Union_node,
+    frame=Coalesce_node,
     connection_type="s3",
     format="glueparquet",
     connection_options={
         "path": "s3://fitnesstracker-staging-264384440796-ap-southeast-1-an/warehouse/",
         "partitionKeys": [],
     },
+    # Ensure correct format_options for Parquet (snappy compression)
     format_options={"compression": "snappy"},
+    #format_options={"writeHeader": True, "separator": ",", "quoteChar": '"'},
     transformation_ctx="AmazonS3_node",
 )
 print("Save the data")
